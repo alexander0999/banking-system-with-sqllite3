@@ -9,6 +9,7 @@ conn.execute('CREATE TABLE IF NOT EXISTS card (id INTEGER PRIMARY KEY, number TE
 INSERT_DATA_NUMBER_PIN = 'INSERT INTO card (number, pin) VALUES (?, ?);'
 GET_NUMBER_PIN_DATA = 'SELECT number, pin FROM card'
 GET_DATA_NUMBER_PIN = 'SELECT number, pin FROM card'
+GET_OTHER_CARD_NUMBER = 'SELECT ALL number FROM card'
 
 
 def add_data_number_pin(conn, number, pin):
@@ -21,14 +22,25 @@ def get_number_pin_data(conn):
         return conn.execute(GET_NUMBER_PIN_DATA).fetchall()
 
 
-def get_balance(conn):
+def get_balance(conn, input_card_number):
     with conn:
         return conn.execute(GET_BALANCE).fetchone()
 
 
-# def add_income(conn):
-#     with conn:
-#         return conn.execute(ADD_INCOME).fetchone()
+def remove_money_transfer(conn, REMOVE_MONEY_TRANSFER):
+    with conn:
+        return conn.execute(REMOVE_MONEY_TRANSFER).fetchone()
+
+
+def add_money_transfer(conn, ADD_MONEY_TRANSFER):
+    with conn:
+        return conn.execute(ADD_MONEY_TRANSFER).fetchone()
+
+
+def get_other_card_number(conn):
+    with conn:
+        return conn.execute(GET_OTHER_CARD_NUMBER).fetchall()
+
 
 def luhn_algorithm(card):
     card = list(card)
@@ -45,6 +57,24 @@ def luhn_algorithm(card):
         if sum_elements % 10 == 0:
             last_element = check_digit
             return last_element
+
+
+def check_luhn_algorithm(check):
+    check_card = list(check)
+    check_card_last_elem = int(check_card.pop(-1))
+    for i in range(len(check_card)):  # translate all elements to int
+        check_card[i] = int(check_card[i])
+    for i in range(0, len(check_card), 2):  # multiply odd by 2
+        check_card[i] *= 2
+    for i in range(len(check_card)):  # minus 9 from elements > 9
+        if check_card[i] >= 10:
+            check_card[i] = check_card[i] - 9
+    while True:
+        sum_elements = sum(check_card) + check_card_last_elem
+        if sum_elements % 10 == 0:
+            return True
+        else:
+            return False
 
 
 def account_identifier():
@@ -73,16 +103,59 @@ def account(input_card_number):
             def add_income(conn, input_card_number):
                 with conn:
                     return conn.execute(ADD_INCOME).fetchone()
-            input_income = input('\nEnter income: ')
-            ADD_INCOME = 'UPDATE card SET balance = "%s" WHERE number = "%s"' % (input_income, input_card_number)
+            input_income = int(input('\nEnter income: '))
+            prev_balance_tuple = get_balance(conn, input_card_number)
+            prev_balance = prev_balance_tuple[0]
+            new_balanace = prev_balance + input_income
+            ADD_INCOME = 'UPDATE card SET balance = "%s" WHERE number = "%s"' % (new_balanace, input_card_number)
             conn.execute(ADD_INCOME).fetchone()
             add_income(conn, input_card_number)
             conn.commit()
             print('Income was added!')
         if choice == 3:
-            pass
+            card_numbers_touple = get_other_card_number(conn)
+            card_numbers_list = []
+            for i in range(0, len(card_numbers_touple)):
+                card_numbers_list.append(card_numbers_touple[i][0])
+            transfer_card_number = str(input('\nTransfer\nEnter card number:\n'))
+            if transfer_card_number != str(input_card_number):
+                if check_luhn_algorithm(transfer_card_number) == True:
+                    if transfer_card_number in card_numbers_list:
+                            transfer_money = int(input('Enter how much money you want to transfer:\n'))
+                            check_balance = get_balance(conn, input_card_number)
+                            GET_BALANCE_TRANSFER = 'SELECT balance FROM card WHERE number = "%s"' % transfer_card_number
+                            def get_balance_transfer(conn):
+                                # get balance of transfer card
+                                with conn:
+                                    return conn.execute(GET_BALANCE_TRANSFER).fetchone()
+                            check_balance_transfer = get_balance_transfer(conn)
+                            if transfer_money < check_balance[0]:
+                                new_balance_main = check_balance[0] - transfer_money
+                                REMOVE_MONEY_TRANSFER = 'UPDATE card SET balance = "%s" WHERE number = "%s"' % (new_balance_main, input_card_number)
+                                remove_money_transfer(conn, REMOVE_MONEY_TRANSFER)
+                                new_balance_transfer = check_balance_transfer[0] + transfer_money
+                                ADD_MONEY_TRANSFER = 'UPDATE card SET balance = "%s" WHERE number = "%s"' % (new_balance_transfer, transfer_card_number)
+                                add_money_transfer(conn, ADD_MONEY_TRANSFER)
+                                print('\nSuccess!')
+                            else:
+                                print('Not enough money!')
+                    else:
+                        print('Such a card does not exist.')
+                else:
+                    print('Probably you made a mistake in the card number. Please try again!')
+            else:
+                print("You can't transfer money to the same account!")
         if choice == 4:
-            pass
+            def close_account(conn, input_card_number):
+                with conn:
+                    return conn.execute(CLOSE_ACCOUNT).fetchone()
+
+            CLOSE_ACCOUNT = 'DELETE FROM card WHERE number = "%s"' % input_card_number
+
+            close_account(conn, input_card_number)
+            conn.commit()
+            print('\nThe account has been closed!\n')
+            break
         if choice == 5:
             print('\nYou have successfully logged out!\n')
             break
@@ -101,6 +174,7 @@ while True:
         user_card_number = str(temp_card_number) + str(luhn_algorithm(temp_card_number))
         user_pincode = create_pincode()
         add_data_number_pin(conn, user_card_number, user_pincode)  # запись в бд
+        conn.commit()
         print(f'\nYour card has been created\nYour card number:\n{int(user_card_number)}\nYour card PIN:\n{int(user_pincode)}\n')
     if choice == 2:
         input_card_number = int(input('\nEnter your card number:\n'))
